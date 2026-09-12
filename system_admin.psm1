@@ -150,3 +150,30 @@ function Install-DomainController {
         Write-Host $_.Exception.Message
     }
 }
+
+# Starts a PowerShell remote session with a target computer
+function Start-PSSession {
+    param (
+        [string]$TargetIPAddress
+    )
+
+    # Prompts the user for administrator credentials
+    $credential = Get-Credential
+
+    try {
+        Enter-PSSession `
+            -ComputerName $TargetIPAddress `
+            -Credential $credential `
+            -ErrorAction Stop
+
+        # Records the successful remote session in the server log
+        Write-ServerLog `
+            -ComputerName $TargetIPAddress `
+            -Task "PowerShell remote session completed" `
+            -Credential $credential
+    }
+    catch {
+        Write-Host "Unable to connect to $TargetIPAddress."
+        Write-Host $_.Exception.Message
+    }
+}
