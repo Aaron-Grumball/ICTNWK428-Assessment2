@@ -298,3 +298,68 @@ function Add-UsersFromCSV {
         Write-Host $_.Exception.Message
     }
 }
+
+# Joins a target computer to the Active Directory domain
+function Add-ComputerToDomain {
+    param (
+        [string]$ComputerName,
+        [string]$TargetComputer
+    )
+
+    # Prompts the user for administrator credentials
+    $credential = Get-Credential
+
+    try {
+        Invoke-Command `
+            -ComputerName $ComputerName `
+            -Credential $credential `
+            -ArgumentList $TargetComputer, $credential `
+            -ScriptBlock {
+                param (
+                    $TargetComputer,
+                    $Credential
+                )
+
+                # Checks that the target computer can be contacted
+                $connectionTest = Test-Connection `
+                    -ComputerName $TargetComputer `
+                    -Count 2 `
+                    -Quiet
+
+                if ($connectionTest) {
+                    Write-Output "$TargetComputer is contactable."
+
+                    # Checks whether the computer already exists in Active Directory
+                    $computerExists = Get-ADComputer `
+                        -Identity $TargetComputer `
+                        -ErrorAction SilentlyContinue
+
+                    if ($computerExists) {
+                        Write-Output "$TargetComputer already exists in Active Directory."
+                    }
+                    else {
+                        Add-Computer `
+                            -ComputerName $TargetComputer `
+                            -DomainName "AGmicksandmacks.local" `
+                            -Credential $Credential `
+                            -Restart
+
+                        Write-Output "$TargetComputer has been added to the domain."
+                    }
+                }
+                else {
+                    Write-Output "$TargetComputer could not be contacted."
+                }
+            } `
+            -ErrorAction Stop
+
+        Write-ServerLog `
+            -ComputerName $ComputerName `
+            -Task "Checked or joined computer $TargetComputer to the domain" `
+            -Credential $credential
+    }
+    catch {
+        Write-Host "Unable to join $TargetComputer to the domain."
+        Write-Host $_.Exception.Message
+    }
+}
