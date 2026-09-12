@@ -461,3 +461,61 @@ function Set-DHCPService {
         Write-Host $_.Exception.Message
     }
 }
+
+# Retrieves the top ten System errors from a target computer
+function Get-TopSystemErrors {
+    param (
+        [string]$TargetIPAddress
+    )
+
+    # Prompts the user for administrator credentials
+    $credential = Get-Credential
+
+    try {
+        Invoke-Command `
+            -ComputerName $TargetIPAddress `
+            -Credential $credential `
+            -ScriptBlock {
+
+                $logDirectory = "C:\myLogs"
+                $outputFile = "C:\myLogs\toptenerrors.txt"
+
+                # Creates the log directory if it does not already exist
+                if (!(Test-Path $logDirectory)) {
+                    New-Item `
+                        -ItemType Directory `
+                        -Path $logDirectory |
+                    Out-Null
+                }
+
+                # Gets the ten most recent errors from the System event log
+                $systemErrors = Get-WinEvent `
+                    -FilterHashtable @{
+                        LogName = "System"
+                        Level = 2
+                    } `
+                    -MaxEvents 10
+
+                # Displays the errors and saves them to the text file
+                $systemErrors |
+                    Select-Object `
+                        TimeCreated,
+                        Id,
+                        ProviderName,
+                        Message |
+                    Format-Table -Wrap |
+                    Out-String |
+                    Tee-Object -FilePath $outputFile
+            } `
+            -ErrorAction Stop
+
+        Write-ServerLog `
+            -ComputerName $TargetIPAddress `
+            -Task "Retrieved top ten System errors" `
+            -Credential $credential
+    }
+    catch {
+        Write-Host "Unable to retrieve System errors from $TargetIPAddress."
+        Write-Host $_.Exception.Message
+    }
+}
