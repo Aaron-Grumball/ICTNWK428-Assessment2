@@ -576,3 +576,22 @@ function New-DiskCleanupTask {
         Write-Host $_.Exception.Message
     }
 }
+
+# Maps the Mick And Macks shared directory as drive S
+function Add-MickAndMacksDrive {
+    try {
+        New-PSDrive `
+            -Name "S" `
+            -PSProvider FileSystem `
+            -Root "\\Server1\mickandmacks_share" `
+            -Persist `
+            -Scope Global `
+            -ErrorAction Stop
+
+        Write-Output "Drive S mapped successfully."
+    }
+    catch {
+        Write-Host "Unable to map drive S."
+        Write-Host $_.Exception.Message
+    }
+}
