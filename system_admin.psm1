@@ -90,3 +90,63 @@ function Test-ServerConnection {
         Write-Host $_.Exception.Message
     }
 }
+
+
+# Promotes the target Windows Server to a Domain Controller
+function Install-DomainController {
+    param (
+        [string]$ComputerName
+    )
+
+    # Prompts the user for administrator credentials
+    $credential = Get-Credential
+
+    try {
+        Invoke-Command `
+            -ComputerName $ComputerName `
+            -Credential $credential `
+            -ScriptBlock {
+
+                $domainName = "AGmicksandmacks.local"
+
+                # Checks whether the server is already a Domain Controller
+                $domainController = Get-WindowsFeature AD-Domain-Services
+
+                if ($domainController.Installed) {
+                    Write-Output "Active Directory Domain Services is already installed."
+                    Write-Output "Server may already be configured as a Domain Controller."
+                }
+                else {
+                    # Installs the Active Directory Domain Services role
+                    Install-WindowsFeature `
+                        -Name AD-Domain-Services `
+                        -IncludeManagementTools
+
+                    Import-Module ADDSDeployment
+
+                    # Prompts for the Directory Services Restore Mode password
+                    $safeModePassword = Read-Host `
+                        "Enter the Directory Services Restore Mode password" `
+                        -AsSecureString
+
+                    # Promotes the server and creates the required domain
+                    Install-ADDSForest `
+                        -DomainName $domainName `
+                        -DomainNetbiosName "AGMICKSANDMACKS" `
+                        -InstallDns:$true `
+                        -SafeModeAdministratorPassword $safeModePassword `
+                        -Force:$true
+                }
+            } `
+            -ErrorAction Stop
+
+        Write-ServerLog `
+            -ComputerName $ComputerName `
+            -Task "Domain Controller configuration checked or performed" `
+            -Credential $credential
+    }
+    catch {
+        Write-Host "Unable to configure $ComputerName as a Domain Controller."
+        Write-Host $_.Exception.Message
+    }
+}
