@@ -519,3 +519,60 @@ function Get-TopSystemErrors {
         Write-Host $_.Exception.Message
     }
 }
+
+# Creates a scheduled disk cleanup task on a target computer
+function New-DiskCleanupTask {
+    param (
+        [string]$TargetIPAddress = "localhost"
+    )
+
+    # Prompts the user for administrator credentials
+    $credential = Get-Credential
+
+    try {
+        Invoke-Command `
+            -ComputerName $TargetIPAddress `
+            -Credential $credential `
+            -ScriptBlock {
+
+                # Creates the scheduled task action
+                $action = New-ScheduledTaskAction `
+                    -Execute "cleanmgr.exe" `
+                    -Argument "/verylowdisk"
+
+                # Creates a daily trigger for 6:00 AM
+                $trigger = New-ScheduledTaskTrigger `
+                    -Daily `
+                    -At 6:00AM
+
+                # Runs the task using SYSTEM with administrator privileges
+                $principal = New-ScheduledTaskPrincipal `
+                    -UserId "SYSTEM" `
+                    -RunLevel Highest
+
+                # Combines the task settings
+                $task = New-ScheduledTask `
+                    -Action $action `
+                    -Trigger $trigger `
+                    -Principal $principal
+
+                # Registers the scheduled task
+                Register-ScheduledTask `
+                    -TaskName "DailyDiskCleanup" `
+                    -InputObject $task `
+                    -Force
+
+                Write-Output "Daily disk cleanup task created successfully."
+            } `
+            -ErrorAction Stop
+
+        Write-ServerLog `
+            -ComputerName $TargetIPAddress `
+            -Task "Created daily disk cleanup scheduled task" `
+            -Credential $credential
+    }
+    catch {
+        Write-Host "Unable to create the disk cleanup scheduled task."
+        Write-Host $_.Exception.Message
+    }
+}
