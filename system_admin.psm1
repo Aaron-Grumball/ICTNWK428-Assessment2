@@ -4,6 +4,7 @@
 #
 # This module contains functions used to remotely configure
 # and manage the Mick And Macks Pies Windows Server environment.
+
 # Runs a PowerShell command on the target server
 function Invoke-ServerCommand {
     param (
@@ -397,14 +398,8 @@ function Set-DHCPService {
                     Write-Output "DHCP role is already installed."
                 }
 
-                # Checks whether the DHCP server is authorised in Active Directory
-                $serverIP = (
-                    Get-NetIPAddress `
-                        -AddressFamily IPv4 |
-                    Where-Object {
-                        $_.InterfaceAlias -notlike "*Loopback*"
-                    }
-                ).IPAddress
+                # IP address used by the DHCP network
+                $serverIP = "10.1.1.2"
 
                 $authorisedServer = Get-DhcpServerInDC |
                     Where-Object {
