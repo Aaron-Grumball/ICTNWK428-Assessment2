@@ -363,3 +363,101 @@ function Add-ComputerToDomain {
         Write-Host $_.Exception.Message
     }
 }
+
+# Configures the DHCP service on the target Windows Server
+function Set-DHCPService {
+    param (
+        [string]$ComputerName,
+        [PSCredential]$Credential
+    )
+
+    try {
+        Invoke-Command `
+            -ComputerName $ComputerName `
+            -Credential $Credential `
+            -ScriptBlock {
+
+                $scopeID = "10.1.1.0"
+                $subnetMask = "255.255.255.0"
+                $startRange = "10.1.1.150"
+                $endRange = "10.1.1.200"
+                $domainName = "AGmicksandmacks.local"
+
+                # Checks whether the DHCP role is installed
+                $dhcpFeature = Get-WindowsFeature -Name DHCP
+
+                if (!$dhcpFeature.Installed) {
+                    Install-WindowsFeature `
+                        -Name DHCP `
+                        -IncludeManagementTools
+
+                    Write-Output "DHCP role installed successfully."
+                }
+                else {
+                    Write-Output "DHCP role is already installed."
+                }
+
+                # Checks whether the DHCP server is authorised in Active Directory
+                $serverIP = (
+                    Get-NetIPAddress `
+                        -AddressFamily IPv4 |
+                    Where-Object {
+                        $_.InterfaceAlias -notlike "*Loopback*"
+                    }
+                ).IPAddress
+
+                $authorisedServer = Get-DhcpServerInDC |
+                    Where-Object {
+                        $_.IPAddress -eq $serverIP
+                    }
+
+                if (!$authorisedServer) {
+                    Add-DhcpServerInDC `
+                        -DnsName "$env:COMPUTERNAME.$domainName" `
+                        -IPAddress $serverIP
+
+                    Write-Output "DHCP server authorised in Active Directory."
+                }
+                else {
+                    Write-Output "DHCP server is already authorised."
+                }
+
+                # Checks whether the required DHCP scope already exists
+                $existingScope = Get-DhcpServerv4Scope `
+                    -ScopeId $scopeID `
+                    -ErrorAction SilentlyContinue
+
+                if ($existingScope) {
+                    Write-Output "DHCP scope $scopeID already exists."
+                }
+                else {
+                    Add-DhcpServerv4Scope `
+                        -Name "MickAndMacks" `
+                        -StartRange $startRange `
+                        -EndRange $endRange `
+                        -SubnetMask $subnetMask `
+                        -State Active
+
+                    Write-Output "DHCP scope $scopeID created successfully."
+                }
+
+                # Configures the DNS and domain options for the scope
+                Set-DhcpServerv4OptionValue `
+                    -ScopeId $scopeID `
+                    -DnsServer $serverIP `
+                    -DnsDomain $domainName
+
+                Restart-Service DHCPServer
+            } `
+            -ErrorAction Stop
+
+        Write-ServerLog `
+            -ComputerName $ComputerName `
+            -Task "Configured DHCP service for 10.1.1.0/24" `
+            -Credential $Credential
+    }
+    catch {
+        Write-Host "Unable to configure the DHCP service."
+        Write-Host $_.Exception.Message
+    }
+}
