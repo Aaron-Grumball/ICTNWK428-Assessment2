@@ -177,3 +177,124 @@ function Start-PSSession {
         Write-Host $_.Exception.Message
     }
 }
+
+# Creates a new Organizational Unit in Active Directory
+function Add-NewOrganizationalUnit {
+    param (
+        [string]$ComputerName,
+        [string]$OUName,
+        [PSCredential]$Credential
+    )
+
+    try {
+        Invoke-Command `
+            -ComputerName $ComputerName `
+            -Credential $Credential `
+            -ArgumentList $OUName `
+            -ScriptBlock {
+                param ($OUName)
+
+                $domainPath = "DC=AGmicksandmacks,DC=local"
+                $ouPath = "OU=$OUName,$domainPath"
+
+                # Checks whether the OU already exists
+                $existingOU = Get-ADOrganizationalUnit `
+                    -Filter "DistinguishedName -eq '$ouPath'" `
+                    -ErrorAction SilentlyContinue
+
+                if ($existingOU) {
+                    Write-Output "OU '$OUName' already exists."
+                }
+                else {
+                    New-ADOrganizationalUnit `
+                        -Name $OUName `
+                        -Path $domainPath `
+                        -ProtectedFromAccidentalDeletion $true
+
+                    Write-Output "OU '$OUName' created successfully."
+                }
+            } `
+            -ErrorAction Stop
+
+        Write-ServerLog `
+            -ComputerName $ComputerName `
+            -Task "Checked or created OU $OUName" `
+            -Credential $Credential
+    }
+    catch {
+        Write-Host "Unable to create OU $OUName."
+        Write-Host $_.Exception.Message
+    }
+}
+
+# Creates Active Directory users from a CSV file
+function Add-UsersFromCSV {
+    param (
+        [string]$ComputerName,
+        [string]$CSVPath,
+        [string]$OUName,
+        [PSCredential]$Credential
+    )
+
+    try {
+        # Reads the CSV file from the client
+        $users = Import-Csv -Path $CSVPath
+
+        Invoke-Command `
+            -ComputerName $ComputerName `
+            -Credential $Credential `
+            -ArgumentList $users, $OUName `
+            -ScriptBlock {
+                param (
+                    $users,
+                    $OUName
+                )
+
+                $domainPath = "DC=AGmicksandmacks,DC=local"
+                $ouPath = "OU=$OUName,$domainPath"
+
+                foreach ($user in $users) {
+                    $firstName = $user.FirstName
+                    $lastName = $user.LastName
+                    $samAccountName = ($firstName + "." + $lastName).ToLower()
+
+                    # Checks whether the user already exists
+                    $userExists = Get-ADUser `
+                        -Filter "SamAccountName -eq '$samAccountName'" `
+                        -ErrorAction SilentlyContinue
+
+                    if ($userExists) {
+                        Write-Output "User '$samAccountName' already exists."
+                    }
+                    else {
+                        $password = ConvertTo-SecureString `
+                            "Password1" `
+                            -AsPlainText `
+                            -Force
+
+                        New-ADUser `
+                            -Name "$firstName $lastName" `
+                            -GivenName $firstName `
+                            -Surname $lastName `
+                            -SamAccountName $samAccountName `
+                            -UserPrincipalName "$samAccountName@AGmicksandmacks.local" `
+                            -Path $ouPath `
+                            -AccountPassword $password `
+                            -Enabled $true
+
+                        Write-Output "User '$samAccountName' created successfully in OU '$OUName'."
+                    }
+                }
+            } `
+            -ErrorAction Stop
+
+        Write-ServerLog `
+            -ComputerName $ComputerName `
+            -Task "Added users from CSV to OU $OUName" `
+            -Credential $Credential
+    }
+    catch {
+        Write-Host "Unable to add users from CSV."
+        Write-Host $_.Exception.Message
+    }
+}
